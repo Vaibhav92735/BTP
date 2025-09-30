@@ -2489,5 +2489,58 @@
       "Stellaluna",
       "Essence"
     ]
+  },
+  {
+    "language": "English",
+    "text_length_category": "Microcopy/Label",
+    "text_quantity": 1,
+    "scenario": "Shop Signage & Display",
+    "text_variation": "Rare/Long Words",
+    "background_type": "Isolated/Clear Background",
+    "layout_style": "Multiple Fonts/Styles",
+    "prompt_text": [
+      "A boutique sign, showcasing the word 'Ephemeral' with its initial 'E' in a delicate, swirling script and the remaining letters in a clean, modern sans-serif, on an isolated clean white background.",
+      "A concept store window decal featuring the word 'Serendip' where the 'S' is a bold, distressed block letter and the rest of the word is in a flowing, handwritten style, on an isolated clear pane.",
+      "A gift shop display board, featuring the word 'Kairos' with 'Kai' in a playful, whimsical bubble font and 'ros' in a sharp, elegant serif, on an isolated wooden panel.",
+      "An upscale perfumery sign, displaying the word 'Nebulicity' with a ethereal, wispy text for 'Nebuli' and a crisp, geometric font for 'city', on an isolated dark background.",
+      "A tech store emblem, featuring the word 'Luminous' where 'Lum' glows with a neon pixelated font and 'inous' appears in a sleek, metallic sans-serif, on an isolated black background.",
+      "A cafe's hanging sign, showcasing 'Vespera' with the initial 'V' in a grand, gothic style and the rest of the letters in a delicate, flowing script, on an isolated starry night-like background.",
+      "A mystical bookstore window sign, presenting 'Crepuscule' with the 'C' as an ancient, illuminated manuscript letter and the rest in a shadowy, runic script, on an isolated, foggy backdrop.",
+      "A nature-inspired shop's display, featuring the word 'Sussurro' with the 'S' and 'u' letters adorned with delicate leaf motifs and the remainder in a smooth, organic font, on an isolated natural linen background.",
+      "An artisanal honey store's storefront sign, showcasing 'Mellified' with the letters 'M' and 'e' appearing to drip with thick honey texture, while the rest are in a classic, ornate serif font, on an isolated amber background.",
+      "An antique store's grand sign, displaying 'Opulentia' with the 'O' in a highly decorative Victorian flourish and the rest of the word in a refined, traditional serif, on an isolated rich velvet background.",
+      "A quirky collectibles shop sign, featuring 'Curiosity' where 'Curio' is in a playful, hand-drawn sketch style and 'sity' is in a neat, vintage typewriter font, on an isolated rustic wooden background.",
+      "A rare bookseller's window graphic, presenting 'Palindrome' with its first and last letters mirroring each other in a bold, calligraphic style, and the inner letters in a classic, legible serif, on an isolated dark academia background.",
+      "A gourmet food market's banner, showcasing 'Abundance' with the initial 'A' formed from interwoven cornucopia elements and the rest in a wholesome, rustic farmhouse script, on an isolated burlap background.",
+      "A children's toy shop display, featuring 'Whimsical' where 'Whim' is bouncy and brightly colored, and 'sical' is in a softer, pastel-toned script, on an isolated pastel background.",
+      "A magical artifacts shop sign, displaying 'Arcana' with 'Arc' in a glowing, ancient runic style and 'ana' in a subtle, mystical serif font, on an isolated smoky background.",
+      "A spiritual wellness store's sign, presenting 'Celestial' with the initial 'C' formed by swirling star trails and the rest of the word in a elegant, flowing script, on an isolated cosmic background.",
+      "A fine dining restaurant's display, featuring 'Gastronomy' with the 'G' as an elaborate, ornate initial cap and the remaining letters in a sophisticated, minimalist sans-serif, on an isolated dark, luxurious background.",
+      "A craft store's window sign, showcasing 'Artisanry' with the 'A' and 'r' having a hand-carved, rustic appearance, and the rest in a neat, brushstroke script, on an isolated workshop-style background.",
+      "A custom tailor's sign, displaying 'Bespoke' with the 'B' in an elegant, embroidered script and the rest of the word in a sharp, refined serif, on an isolated mannequin-like background.",
+      "A luxury chocolatier's sign, presenting 'Exquisite' with 'Ex' in a lavish, gold-leaf style and 'quisite' in a delicate, flowing script, on an isolated velvet-lined background."
+    ],
+    "inscriptions": [
+      "Ephemeral",
+      "Serendip",
+      "Kairos",
+      "Nebulicity",
+      "Luminous",
+      "Vespera",
+      "Crepuscule",
+      "Sussurro",
+      "Mellified",
+      "Opulentia",
+      "Curiosity",
+      "Palindrome",
+      "Abundance",
+      "Whimsical",
+      "Arcana",
+      "Celestial",
+      "Gastronomy",
+      "Artisanry",
+      "Bespoke",
+      "Exquisite"
+    ]
   }
 ]

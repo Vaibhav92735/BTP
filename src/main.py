@@ -135,9 +135,8 @@ def create_judge_prompt(previous_output, rules_prompt):
     return f"""
     You are an LLM acting as a judge for generated prompts and inscriptions.
     Review the following output and ensure it strictly follows the original rules.
-    Correct any errors, improve creativity and quality, ensure prompts are in English only,
-    inscriptions are in the specified language, match the required quantity, length, variation, etc.
-    Do not change the number of items (must be exactly 20).
+    If it already follows all rules perfectly (exactly 20 items, prompts in English only, inscriptions in the specified language, matching quantity, length, variation, scenario, background, layout, etc., and high creativity/quality), set "approved": true and copy the "prompts" and "inscriptions" as is.
+    Otherwise, set "approved": false, provide the corrected/modified versions to fix errors, improve creativity and quality, and explain the changes/issues in "reason".
     
     Original Rules:
     {rules_prompt}
@@ -146,36 +145,47 @@ def create_judge_prompt(previous_output, rules_prompt):
     {previous_output}
     
     OUTPUT FORMAT:
-    Respond with a single, valid JSON object with two keys: "prompts" and "inscriptions", 
-    containing the modified/corrected versions.
+    Respond with a single, valid JSON object with keys: "prompts", "inscriptions", "approved" (boolean), "reason" (string, required if approved is false, otherwise empty string).
     """
 
 # --- MAIN GENERATION FUNCTION ---
-def iterative_generate_prompts(meta_prompt, retries=3):
-    """Uses three LLMs iteratively: Generate with Gemini, Judge/Modify with Groq Llama, Final Judge/Modify with Groq Qwen."""
+def iterative_generate_prompts(meta_prompt, retries=3, max_iter=10):
+    """Uses three LLMs iteratively: Generate with Gemini, then iterate judges (Llama, Qwen, Gemini) until approved."""
     # Step 1: Initial generation with Gemini
     initial_data = generate_with_gemini(meta_prompt)
     if not initial_data:
         return None, None
     previous_output = json.dumps(initial_data)
 
-    # Step 2: First judge with Groq Llama
-    judge1_prompt = create_judge_prompt(previous_output, meta_prompt)
-    judged1_data = generate_with_groq(judge1_prompt)
-    if not judged1_data:
-        logging.warning("Groq Llama judge failed; falling back to initial.")
-        judged1_data = initial_data
-    previous_output = json.dumps(judged1_data)
+    # Define the judge functions in rotation: Llama, Qwen, Gemini
+    judges = [generate_with_groq, generate_with_qwen, generate_with_gemini]
 
-    # Step 3: Second judge with Groq Qwen
-    judge2_prompt = create_judge_prompt(previous_output, meta_prompt)
-    final_data = generate_with_qwen(judge2_prompt)
-    if not final_data:
-        logging.warning("Groq Qwen judge failed; falling back to Groq Llama version.")
-        final_data = judged1_data
+    current_judge_idx = 0
+    for iteration in range(max_iter):
+        judge_prompt = create_judge_prompt(previous_output, meta_prompt)
+        judged_data = judges[current_judge_idx](judge_prompt)
+        if not judged_data:
+            logging.warning(f"Iteration {iteration + 1}: Judge failed; continuing to next.")
+            current_judge_idx = (current_judge_idx + 1) % len(judges)
+            continue
 
-    if "prompts" in final_data and "inscriptions" in final_data:
-        return final_data["prompts"], final_data["inscriptions"]
+        if "approved" in judged_data and judged_data["approved"]:
+            logging.info(f"Approved after {iteration + 1} iterations.")
+            return judged_data["prompts"], judged_data["inscriptions"]
+        else:
+            logging.info(f"Iteration {iteration + 1}: Not approved. Reason: {judged_data.get('reason', 'No reason provided')}")
+            # Update previous_output with the corrected version
+            corrected_data = {
+                "prompts": judged_data["prompts"],
+                "inscriptions": judged_data["inscriptions"]
+            }
+            previous_output = json.dumps(corrected_data)
+
+        current_judge_idx = (current_judge_idx + 1) % len(judges)
+
+    logging.warning(f"Max iterations ({max_iter}) reached without approval; returning last version.")
+    if "prompts" in judged_data and "inscriptions" in judged_data:
+        return judged_data["prompts"], judged_data["inscriptions"]
     return None, None
 
 # --- MAIN GENERATION LOOP ---
