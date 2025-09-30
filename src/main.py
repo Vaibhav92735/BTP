@@ -51,6 +51,8 @@ TEXT_VARIATIONS = [
 ]
 BACKGROUNDS = ["Complex Background", "Isolated/Clear Background"]
 LAYOUTS = ["Uniform Font and Style", "Multiple Fonts/Styles"]
+NUM_PROMPTS_PER_COMBO = 150
+BATCH_SIZE = 20
 
 # --- API CALL FUNCTIONS FOR EACH LLM ---
 def call_api_with_retry(call_func, retries=3, delay=5):
@@ -94,11 +96,11 @@ def generate_with_qwen(prompt):
     return generate_with_groq(prompt, model=qwen_model)
 
 # --- PROMPT CREATION FUNCTIONS ---
-def create_meta_prompt(language, scenario, length_category, length_desc, quantity, variation, background, layout):
+def create_meta_prompt(language, scenario, length_category, length_desc, quantity, variation, background, layout, num_prompts):
     """Constructs the initial prompt for the generative model."""
     return f"""
     You are a creative prompt engineer for an advanced text-to-image AI.
-    Your mission is to generate exactly 20 imaginative prompts based on a set of rules.
+    Your mission is to generate exactly {num_prompts} imaginative prompts based on a set of rules.
     
     RULES FOR THIS PROMPT:
     - Language for Text: `{language}`
@@ -112,8 +114,8 @@ def create_meta_prompt(language, scenario, length_category, length_desc, quantit
     OUTPUT FORMAT:
     You MUST respond with a single, valid JSON object with two keys: "prompts" and "inscriptions". 
     Also make sure the prompt is in english only but the text should be in the given language.
-    - "prompts": A JSON array of 20 strings (the full image generation prompts).
-    - "inscriptions": A JSON array of 20 strings (the exact text content to be rendered in the image).
+    - "prompts": A JSON array of {num_prompts} strings (the full image generation prompts).
+    - "inscriptions": A JSON array of {num_prompts} strings (the exact text content to be rendered in the image).
     
     Example:
     {{
@@ -127,7 +129,7 @@ def create_meta_prompt(language, scenario, length_category, length_desc, quantit
       ]
     }}
     
-    Now, generate the 20 prompts and their corresponding inscriptions based on the rules.
+    Now, generate the {num_prompts} prompts and their corresponding inscriptions based on the rules.
     """
 
 def create_judge_prompt(previous_output, rules_prompt):
@@ -135,7 +137,7 @@ def create_judge_prompt(previous_output, rules_prompt):
     return f"""
     You are an LLM acting as a judge for generated prompts and inscriptions.
     Review the following output and ensure it strictly follows the original rules.
-    If it already follows all rules perfectly (exactly 20 items, prompts in English only, inscriptions in the specified language, matching quantity, length, variation, scenario, background, layout, etc., and high creativity/quality), set "approved": true and copy the "prompts" and "inscriptions" as is.
+    If it already follows all rules perfectly (exactly the number of items as specified in the original rules, prompts in English only, inscriptions in the specified language, matching quantity, length, variation, scenario, background, layout, etc., and high creativity/quality), set "approved": true and copy the "prompts" and "inscriptions" as is.
     Otherwise, set "approved": false, provide the corrected/modified versions to fix errors, improve creativity and quality, and explain the changes/issues in "reason".
     
     Original Rules:
@@ -149,7 +151,7 @@ def create_judge_prompt(previous_output, rules_prompt):
     """
 
 # --- MAIN GENERATION FUNCTION ---
-def iterative_generate_prompts(meta_prompt, retries=3, max_iter=10):
+def iterative_generate_prompts(meta_prompt, max_iter=10):
     """Uses three LLMs iteratively: Generate with Gemini, then iterate judges (Llama, Qwen, Gemini) until approved."""
     # Step 1: Initial generation with Gemini
     initial_data = generate_with_gemini(meta_prompt)
@@ -227,10 +229,22 @@ def generate_dataset():
 
             logging.info(f"Processing new combo: {lang}, {length_cat}, Qty {quantity}, {variation}...")
             
-            meta_prompt = create_meta_prompt(lang, scenario, length_cat, length_desc, quantity, variation, background, layout)
-            prompt_texts_list, inscriptions_list = iterative_generate_prompts(meta_prompt)
+            prompt_texts_list = []
+            inscriptions_list = []
+            while len(prompt_texts_list) < NUM_PROMPTS_PER_COMBO:
+                num_to_generate = min(BATCH_SIZE, NUM_PROMPTS_PER_COMBO - len(prompt_texts_list))
+                meta_prompt = create_meta_prompt(lang, scenario, length_cat, length_desc, quantity, variation, background, layout, num_to_generate)
+                prompts, inscriptions = iterative_generate_prompts(meta_prompt)
+                if prompts and inscriptions and len(prompts) == num_to_generate and len(inscriptions) == num_to_generate:
+                    prompt_texts_list.extend(prompts)
+                    inscriptions_list.extend(inscriptions)
+                    logging.info(f"Generated batch of {num_to_generate}. Total so far: {len(prompt_texts_list)}")
+                else:
+                    logging.error("Failed to generate batch. Stopping for this combo.")
+                    break
+                time.sleep(1)  # Rate limit between batches
 
-            if prompt_texts_list and inscriptions_list:
+            if len(prompt_texts_list) == NUM_PROMPTS_PER_COMBO:
                 prompt_object = {
                     "language": lang,
                     "text_length_category": length_cat,
@@ -249,7 +263,7 @@ def generate_dataset():
                     json.dump(lang_prompts, f, indent=2, ensure_ascii=False)
                 logging.info(f"✔ Progress saved. Total prompt objects for {lang}: {len(lang_prompts)}.")
             else:
-                logging.error("✗ Prompt generation failed for this combo after retries.")
+                logging.error("✗ Prompt generation failed for this combo; not saving partial results.")
             
             time.sleep(1)  # Rate limit between successful calls
 
