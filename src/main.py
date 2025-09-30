@@ -5,25 +5,31 @@ import time
 import itertools
 import logging
 from dotenv import load_dotenv
+from groq import Groq
 
 # --- CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 load_dotenv(dotenv_path='../.env')
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("API key not found. Please set the GEMINI_API_KEY environment variable.")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GEMINI_API_KEY or not GROQ_API_KEY:
+    raise ValueError("One or more API keys not found. Please set GEMINI_API_KEY and GROQ_API_KEY environment variables.")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Use GenerationConfig for JSON mode
+# Use GenerationConfig for JSON mode in Gemini
 generation_config = genai.GenerationConfig(
     response_mime_type="application/json"
 )
-model = genai.GenerativeModel(
+gemini_model = genai.GenerativeModel(
     'gemini-2.5-flash',
     generation_config=generation_config
 )
+
+groq_client = Groq(api_key=GROQ_API_KEY)
+groq_model = "llama-3.3-70b-versatile"  # Using Llama3-70B via Groq
+qwen_model = "qwen/qwen3-32b"  # Using Qwen via Groq
 
 # --- DATASET STRUCTURE DEFINITION ---
 LANGUAGES = ["English", "Mandarin Chinese", "Hindi", "Spanish", "French", "Hinglish", "Spanglish", "Franglais"]
@@ -46,29 +52,50 @@ TEXT_VARIATIONS = [
 BACKGROUNDS = ["Complex Background", "Isolated/Clear Background"]
 LAYOUTS = ["Uniform Font and Style", "Multiple Fonts/Styles"]
 
-# --- API CALL FUNCTION ---
-def generate_prompts_with_retry(meta_prompt, retries=3, delay=5):
-    """Calls the API with a retry mechanism."""
+# --- API CALL FUNCTIONS FOR EACH LLM ---
+def call_api_with_retry(call_func, retries=3, delay=5):
+    """Generic retry mechanism for API calls."""
     for attempt in range(retries):
         try:
-            response = model.generate_content(meta_prompt)
-            data = json.loads(response.text)
-            # Ensure both keys exist
+            data = call_func()
             if "prompts" in data and "inscriptions" in data:
-                return data["prompts"], data["inscriptions"]
+                return data
             else:
                 logging.warning(f"Attempt {attempt + 1}: JSON response missing required keys.")
         except (ValueError, json.JSONDecodeError) as e:
-            logging.warning(f"Attempt {attempt + 1} failed with error: {e}. Response: {getattr(response, 'text', 'No text')}")
+            logging.warning(f"Attempt {attempt + 1} failed with error: {e}.")
         
         if attempt < retries - 1:
-            time.sleep(delay * (attempt + 1)) # Exponential backoff
+            time.sleep(delay * (attempt + 1))  # Exponential backoff
             
-    logging.error(f"All {retries} attempts failed for a prompt.")
-    return None, None
+    logging.error(f"All {retries} attempts failed.")
+    return None
 
+def generate_with_gemini(prompt):
+    def call():
+        response = gemini_model.generate_content(prompt)
+        return json.loads(response.text)
+    return call_api_with_retry(call)
+
+def generate_with_groq(prompt, model=groq_model):
+    def call():
+        response = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that responds only with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            model=model,
+            response_format={"type": "json_object"}
+        )
+        return json.loads(response.choices[0].message.content)
+    return call_api_with_retry(call)
+
+def generate_with_qwen(prompt):
+    return generate_with_groq(prompt, model=qwen_model)
+
+# --- PROMPT CREATION FUNCTIONS ---
 def create_meta_prompt(language, scenario, length_category, length_desc, quantity, variation, background, layout):
-    """Constructs the prompt for the generative model."""
+    """Constructs the initial prompt for the generative model."""
     return f"""
     You are a creative prompt engineer for an advanced text-to-image AI.
     Your mission is to generate exactly 20 imaginative prompts based on a set of rules.
@@ -102,6 +129,54 @@ def create_meta_prompt(language, scenario, length_category, length_desc, quantit
     
     Now, generate the 20 prompts and their corresponding inscriptions based on the rules.
     """
+
+def create_judge_prompt(previous_output, rules_prompt):
+    """Constructs the prompt for judge LLMs."""
+    return f"""
+    You are an LLM acting as a judge for generated prompts and inscriptions.
+    Review the following output and ensure it strictly follows the original rules.
+    Correct any errors, improve creativity and quality, ensure prompts are in English only,
+    inscriptions are in the specified language, match the required quantity, length, variation, etc.
+    Do not change the number of items (must be exactly 20).
+    
+    Original Rules:
+    {rules_prompt}
+    
+    Previous Output to Judge:
+    {previous_output}
+    
+    OUTPUT FORMAT:
+    Respond with a single, valid JSON object with two keys: "prompts" and "inscriptions", 
+    containing the modified/corrected versions.
+    """
+
+# --- MAIN GENERATION FUNCTION ---
+def iterative_generate_prompts(meta_prompt, retries=3):
+    """Uses three LLMs iteratively: Generate with Gemini, Judge/Modify with Groq Llama, Final Judge/Modify with Groq Qwen."""
+    # Step 1: Initial generation with Gemini
+    initial_data = generate_with_gemini(meta_prompt)
+    if not initial_data:
+        return None, None
+    previous_output = json.dumps(initial_data)
+
+    # Step 2: First judge with Groq Llama
+    judge1_prompt = create_judge_prompt(previous_output, meta_prompt)
+    judged1_data = generate_with_groq(judge1_prompt)
+    if not judged1_data:
+        logging.warning("Groq Llama judge failed; falling back to initial.")
+        judged1_data = initial_data
+    previous_output = json.dumps(judged1_data)
+
+    # Step 3: Second judge with Groq Qwen
+    judge2_prompt = create_judge_prompt(previous_output, meta_prompt)
+    final_data = generate_with_qwen(judge2_prompt)
+    if not final_data:
+        logging.warning("Groq Qwen judge failed; falling back to Groq Llama version.")
+        final_data = judged1_data
+
+    if "prompts" in final_data and "inscriptions" in final_data:
+        return final_data["prompts"], final_data["inscriptions"]
+    return None, None
 
 # --- MAIN GENERATION LOOP ---
 def generate_dataset():
@@ -143,7 +218,7 @@ def generate_dataset():
             logging.info(f"Processing new combo: {lang}, {length_cat}, Qty {quantity}, {variation}...")
             
             meta_prompt = create_meta_prompt(lang, scenario, length_cat, length_desc, quantity, variation, background, layout)
-            prompt_texts_list, inscriptions_list = generate_prompts_with_retry(meta_prompt)
+            prompt_texts_list, inscriptions_list = iterative_generate_prompts(meta_prompt)
 
             if prompt_texts_list and inscriptions_list:
                 prompt_object = {
@@ -166,7 +241,7 @@ def generate_dataset():
             else:
                 logging.error("✗ Prompt generation failed for this combo after retries.")
             
-            time.sleep(1) # Rate limit between successful calls
+            time.sleep(1)  # Rate limit between successful calls
 
     logging.info(f"\n--- DONE! Total new prompts generated across all files: {total_new_prompts} ---")
 
