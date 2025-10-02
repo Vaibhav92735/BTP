@@ -5,18 +5,16 @@ import time
 import itertools
 import logging
 from dotenv import load_dotenv
-from groq import Groq
-from perplexity import Perplexity
+from openai import OpenAI
 
 # --- CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 load_dotenv(dotenv_path='../.env')
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GEMINI_API_KEY or not PERPLEXITY_API_KEY or not GROQ_API_KEY:
-    raise ValueError("One or more API keys not found. Please set GEMINI_API_KEY, PERPLEXITY_API_KEY, and GROQ_API_KEY environment variables.")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not GEMINI_API_KEY or not OPENROUTER_API_KEY:
+    raise ValueError("One or more API keys not found. Please set GEMINI_API_KEY and OPENROUTER_API_KEY environment variables.")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -29,10 +27,9 @@ gemini_model = genai.GenerativeModel(
     generation_config=generation_config
 )
 
-groq_client = Groq(api_key=GROQ_API_KEY)
-groq_model = "llama-3.3-70b-versatile"  # Using Llama3-70B via Groq
-sonar_model = "sonar_pro"
-client = Perplexity(api_key=PERPLEXITY_API_KEY)
+openrouter_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
+grok_fast_model = "x-ai/grok-4-fast:free"
+tongyi_model = "alibaba/tongyi-deepresearch-30b-a3b:free"
 
 # --- DATASET STRUCTURE DEFINITION ---
 LANGUAGES = ["English", "Mandarin Chinese", "Hindi", "Spanish", "French", "Hinglish", "Spanglish", "Franglais"]
@@ -82,9 +79,9 @@ def generate_with_gemini(prompt):
         return json.loads(response.text)
     return call_api_with_retry(call)
 
-def generate_with_groq(prompt, model=groq_model):
+def generate_with_grok_fast(prompt, model=grok_fast_model):
     def call():
-        response = groq_client.chat.completions.create(
+        response = openrouter_client.chat.completions.create(
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that responds only with valid JSON."},
                 {"role": "user", "content": prompt}
@@ -95,9 +92,9 @@ def generate_with_groq(prompt, model=groq_model):
         return json.loads(response.choices[0].message.content)
     return call_api_with_retry(call)
 
-def generate_with_perplexity(prompt, model=sonar_model):
+def generate_with_tongyi(prompt, model=tongyi_model):
     def call():
-        response = client.chat.completions.create(
+        response = openrouter_client.chat.completions.create(
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that responds only with valid JSON."},
                 {"role": "user", "content": prompt}
@@ -107,9 +104,6 @@ def generate_with_perplexity(prompt, model=sonar_model):
         )
         return json.loads(response.choices[0].message.content)
     return call_api_with_retry(call)
-
-def generate_with_sonar(prompt):
-    return generate_with_perplexity(prompt, model=sonar_model)
 
 # --- PROMPT CREATION FUNCTIONS ---
 def create_meta_prompt(language, scenario, length_category, length_desc, quantity, variation, background, layout, num_prompts):
@@ -168,15 +162,15 @@ def create_judge_prompt(previous_output, rules_prompt):
 
 # --- MAIN GENERATION FUNCTION ---
 def iterative_generate_prompts(meta_prompt, max_iter=10):
-    """Uses three LLMs iteratively: Generate with Gemini, then iterate judges (Llama, Qwen, Gemini) until approved."""
+    """Uses three LLMs iteratively: Generate with Gemini, then iterate judges (Grok-fast, Tongyi, Gemini) until approved."""
     # Step 1: Initial generation with Gemini
     initial_data = generate_with_gemini(meta_prompt)
     if not initial_data:
         return None, None
     previous_output = json.dumps(initial_data)
 
-    # Define the judge functions in rotation: Llama, Qwen, Gemini
-    judges = [generate_with_sonar, generate_with_groq, generate_with_gemini]
+    # Define the judge functions in rotation: Grok-fast, Tongyi, Gemini
+    judges = [generate_with_grok_fast, generate_with_tongyi, generate_with_gemini]
 
     current_judge_idx = 0
     for iteration in range(max_iter):
