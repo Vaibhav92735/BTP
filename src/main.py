@@ -6,15 +6,17 @@ import itertools
 import logging
 from dotenv import load_dotenv
 from groq import Groq
+from perplexity import Perplexity
 
 # --- CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 load_dotenv(dotenv_path='../.env')
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GEMINI_API_KEY or not GROQ_API_KEY:
-    raise ValueError("One or more API keys not found. Please set GEMINI_API_KEY and GROQ_API_KEY environment variables.")
+if not GEMINI_API_KEY or not PERPLEXITY_API_KEY or not GROQ_API_KEY:
+    raise ValueError("One or more API keys not found. Please set GEMINI_API_KEY, PERPLEXITY_API_KEY, and GROQ_API_KEY environment variables.")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -29,7 +31,8 @@ gemini_model = genai.GenerativeModel(
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 groq_model = "llama-3.3-70b-versatile"  # Using Llama3-70B via Groq
-qwen_model = "qwen/qwen3-32b"  # Using Qwen via Groq
+sonar_model = "sonar_pro"
+client = Perplexity(api_key=PERPLEXITY_API_KEY)
 
 # --- DATASET STRUCTURE DEFINITION ---
 LANGUAGES = ["English", "Mandarin Chinese", "Hindi", "Spanish", "French", "Hinglish", "Spanglish", "Franglais"]
@@ -92,8 +95,21 @@ def generate_with_groq(prompt, model=groq_model):
         return json.loads(response.choices[0].message.content)
     return call_api_with_retry(call)
 
-def generate_with_qwen(prompt):
-    return generate_with_groq(prompt, model=qwen_model)
+def generate_with_perplexity(prompt, model=sonar_model):
+    def call():
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that responds only with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            model=model,
+            response_format={"type": "json_object"}
+        )
+        return json.loads(response.choices[0].message.content)
+    return call_api_with_retry(call)
+
+def generate_with_sonar(prompt):
+    return generate_with_perplexity(prompt, model=sonar_model)
 
 # --- PROMPT CREATION FUNCTIONS ---
 def create_meta_prompt(language, scenario, length_category, length_desc, quantity, variation, background, layout, num_prompts):
@@ -160,7 +176,7 @@ def iterative_generate_prompts(meta_prompt, max_iter=10):
     previous_output = json.dumps(initial_data)
 
     # Define the judge functions in rotation: Llama, Qwen, Gemini
-    judges = [generate_with_groq, generate_with_qwen, generate_with_gemini]
+    judges = [generate_with_sonar, generate_with_groq, generate_with_gemini]
 
     current_judge_idx = 0
     for iteration in range(max_iter):
